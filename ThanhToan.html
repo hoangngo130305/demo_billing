@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Đặc tả Thanh toán QR & VNPay</title>
+<style>
+body { font-family: Arial; line-height: 1.6; }
+code { background: #f4f4f4; padding: 6px; display: block; white-space: pre-wrap; }
+h2 { color: #2c3e50; }
+h3 { color: #34495e; }
+</style>
+</head>
+<body>
+
+<h1>Đặc tả Thanh toán (QR Code & VNPay)</h1>
+
+<hr/>
+
+<h2>1. Bảng dữ liệu</h2>
+
+<h3>1.1 Bảng payments</h3>
+<code>
+payments
+- id (PK)
+- order_id
+- amount
+- currency (VND)
+- method (QR | VNPAY | CASH)
+- status (PENDING | SUCCESS | FAILED)
+- transaction_code
+- payment_url
+- qr_code
+- paid_at
+- created_at
+</code>
+
+<h3>1.2 Bảng payment_logs (khuyến nghị)</h3>
+<code>
+payment_logs
+- id
+- payment_id
+- type (WEBHOOK)
+- raw_data (JSON)
+- created_at
+</code>
+
+<h3>1.3 (Optional) Bảng payment_items</h3>
+<code>
+payment_items
+- id
+- payment_id
+- name
+- amount
+</code>
+
+<hr/>
+
+<h2>2. API Thanh toán</h2>
+
+<h3>2.1 Tạo thanh toán</h3>
+<code>POST /api/v1/payments</code>
+
+<code>
+{
+  "order_id": 123,
+  "amount": 500000,
+  "method": "VNPAY"
+}
+</code>
+
+<h4>Response</h4>
+<code>
+{
+  "status": "success",
+  "data": {
+    "payment_id": 999,
+    "payment_url": "https://sandbox.vnpay.vn/...",
+    "qr_code": null
+  }
+}
+</code>
+
+<hr/>
+
+<h3>2.2 Thanh toán QR</h3>
+<code>
+{
+  "order_id": 123,
+  "amount": 500000,
+  "method": "QR"
+}
+</code>
+
+<h4>Response</h4>
+<code>
+{
+  "status": "success",
+  "data": {
+    "payment_id": 1000,
+    "qr_code": "000201010212...",
+    "bank_info": {
+      "account_name": "CONG TY ABC",
+      "account_number": "123456789",
+      "bank": "VCB"
+    }
+  }
+}
+</code>
+
+<hr/>
+
+<h3>2.3 Webhook từ cổng thanh toán</h3>
+<code>POST /api/v1/payments/webhook</code>
+
+<code>
+{
+  "transaction_code": "VNP123456",
+  "amount": 500000,
+  "status": "SUCCESS",
+  "order_id": 123
+}
+</code>
+
+<h4>Xử lý backend</h4>
+<code>
+- Verify chữ ký (signature)
+- Update payments.status = SUCCESS
+- Lưu log vào payment_logs
+</code>
+
+<hr/>
+
+<h3>2.4 Kiểm tra trạng thái thanh toán</h3>
+<code>GET /api/v1/payments/{payment_id}</code>
+
+<code>
+{
+  "status": "success",
+  "data": {
+    "status": "SUCCESS"
+  }
+}
+</code>
+
+<hr/>
+
+<h2>3. Flow hoạt động</h2>
+
+<h3>3.1 VNPay</h3>
+<code>
+1. App gọi POST /payments
+2. Nhận payment_url
+3. Mở WebView
+4. User thanh toán
+5. VNPay gọi webhook về server
+6. Server update trạng thái
+7. App gọi GET /payments/{id} để kiểm tra
+</code>
+
+<h3>3.2 QR Code</h3>
+<code>
+1. App gọi POST /payments
+2. Hiển thị QR
+3. User chuyển khoản
+4. Backend nhận webhook hoặc xác nhận thủ công
+5. App polling GET /payments/{id}
+</code>
+
+<hr/>
+
+<h2>4. Lưu ý quan trọng</h2>
+<ul>
+<li>POST /payments chỉ tạo giao dịch, không phải thanh toán thành công</li>
+<li>Luôn dùng GET /payments/{id} để kiểm tra trạng thái</li>
+<li>Thanh toán là async (không đồng bộ)</li>
+<li>Không trust client, phải verify từ backend</li>
+<li>Nên lưu log webhook để debug & đối soát</li>
+</ul>
+
+</body>
+</html>

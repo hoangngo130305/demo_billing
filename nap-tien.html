@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nạp tiền ví SEMS</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: #f4f7fa;
+        margin: 0;
+        padding: 20px;
+      }
+      .container {
+        max-width: 520px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      .header {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        padding: 20px;
+        text-align: center;
+      }
+      .content {
+        padding: 30px;
+      }
+      input {
+        width: 100%;
+        padding: 14px;
+        font-size: 18px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 15px;
+      }
+      button {
+        width: 100%;
+        padding: 16px;
+        font-size: 18px;
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+      button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+
+      #status {
+        margin: 20px 0;
+        padding: 15px;
+        border-radius: 8px;
+        font-weight: bold;
+        text-align: center;
+        min-height: 50px;
+      }
+      .success {
+        background: #d4edda;
+        color: #155724;
+      }
+      .pending {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      #qrcode {
+        margin: 25px auto;
+        padding: 15px;
+        background: #fff;
+        border: 2px solid #eee;
+        border-radius: 12px;
+        display: none;
+      }
+      #transaction-info {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        display: none;
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        margin: 8px 0;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 9999;
+        padding: 16px;
+      }
+      .modal.show {
+        display: flex;
+      }
+      .modal-card {
+        width: min(420px, 100%);
+        background: #ffffff;
+        border-radius: 14px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+        animation: popup-enter 0.22s ease-out;
+      }
+      .modal-head {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, #24a148, #198754);
+        color: #fff;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .modal-body {
+        padding: 18px 20px;
+        color: #202124;
+        line-height: 1.5;
+      }
+      .modal-footer {
+        padding: 14px 20px 20px;
+      }
+      .modal-footer button {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: #198754;
+        color: #fff;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      @keyframes popup-enter {
+        from {
+          transform: translateY(8px) scale(0.98);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0) scale(1);
+          opacity: 1;
+        }
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header"><h2>Nạp tiền vào ví SEMS</h2></div>
+      <div class="content">
+        <input
+          type="number"
+          id="amount"
+          placeholder="Nhập số tiền"
+          min="10000"
+          value="50000"
+        />
+        <button type="button" id="btnCreate">Tạo mã QR thanh toán</button>
+
+        <div id="status"></div>
+        <div id="qrcode"></div>
+        <div id="transaction-info">
+          <h3>📋 Thông tin giao dịch</h3>
+          <div class="info-row">
+            <span>Order Code:</span> <strong id="orderCode">-</strong>
+          </div>
+          <div class="info-row">
+            <span>Số tiền:</span> <strong id="amountDisplay">-</strong>
+          </div>
+          <div class="info-row">
+            <span>Trạng thái:</span>
+            <strong id="statusText">Đang chờ thanh toán...</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="successModal"
+      class="modal"
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="modal-card">
+        <div class="modal-head">Thanh toán thành công</div>
+        <div class="modal-body">
+          <div id="successMessage">Bạn đã nạp tiền thành công vào ví SEMS.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnCloseSuccessModal">Đóng</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let currentOrderCode = null;
+      let pollingInterval = null;
+      let lastFocusedElement = null;
+      const PAYMENT_STATE_KEY = "sems_payment_state";
+      const API_BASE = "http://localhost:8000/api";
+
+      function showSuccessPopup(amount) {
+        const modal = document.getElementById("successModal");
+        const message = document.getElementById("successMessage");
+        const closeBtn = document.getElementById("btnCloseSuccessModal");
+        lastFocusedElement = document.activeElement;
+
+        message.textContent = `Bạn đã nạp thành công ${Number(amount).toLocaleString("vi-VN")} VND vào ví SEMS.`;
+        modal.inert = false;
+        modal.classList.add("show");
+        modal.setAttribute("aria-hidden", "false");
+        closeBtn.focus();
+      }
+
+      function hideSuccessPopup() {
+        const modal = document.getElementById("successModal");
+
+        // Move focus out of modal before hiding it from assistive tech.
+        if (modal.contains(document.activeElement)) {
+          document.getElementById("btnCreate").focus();
+        }
+
+        modal.classList.remove("show");
+        modal.setAttribute("aria-hidden", "true");
+        modal.inert = true;
+
+        if (lastFocusedElement && document.contains(lastFocusedElement)) {
+          lastFocusedElement.focus();
+        }
+      }
+
+      function savePaymentState(state) {
+        sessionStorage.setItem(PAYMENT_STATE_KEY, JSON.stringify(state));
+      }
+
+      function clearPaymentState() {
+        sessionStorage.removeItem(PAYMENT_STATE_KEY);
+      }
+
+      function renderPaymentUI(orderCode, amount, qrCode) {
+        const qrDiv = document.getElementById("qrcode");
+        const infoDiv = document.getElementById("transaction-info");
+        const statusDiv = document.getElementById("status");
+
+        qrDiv.innerHTML = "";
+        qrDiv.style.display = "block";
+        new QRCode(qrDiv, { text: qrCode, width: 260, height: 260 });
+
+        document.getElementById("orderCode").textContent = orderCode;
+        document.getElementById("amountDisplay").textContent =
+          Number(amount).toLocaleString("vi-VN") + " VND";
+        infoDiv.style.display = "block";
+
+        statusDiv.textContent =
+          "✅ Quét mã QR bằng app ngân hàng để thanh toán";
+        statusDiv.className = "pending";
+      }
+
+      function restorePaymentState() {
+        const raw = sessionStorage.getItem(PAYMENT_STATE_KEY);
+        if (!raw) return;
+
+        try {
+          const state = JSON.parse(raw);
+          if (!state || !state.orderCode || !state.qrCode || !state.amount) {
+            clearPaymentState();
+            return;
+          }
+
+          currentOrderCode = state.orderCode;
+          renderPaymentUI(state.orderCode, state.amount, state.qrCode);
+          startPolling();
+        } catch (_) {
+          clearPaymentState();
+        }
+      }
+
+      async function createPayment() {
+        const amount = parseInt(document.getElementById("amount").value);
+        const btn = document.getElementById("btnCreate");
+        const statusDiv = document.getElementById("status");
+        const qrDiv = document.getElementById("qrcode");
+        const infoDiv = document.getElementById("transaction-info");
+
+        btn.disabled = true;
+        qrDiv.style.display = "none";
+        infoDiv.style.display = "none";
+
+        statusDiv.textContent = "Đang tạo giao dịch...";
+        statusDiv.className = "pending";
+
+        try {
+          const res = await fetch(`${API_BASE}/create-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: amount }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Không thể tạo giao dịch");
+
+          if (data.error) throw new Error(data.error);
+
+          currentOrderCode = data.orderCode;
+          renderPaymentUI(data.orderCode, amount, data.qrCode);
+
+          savePaymentState({
+            orderCode: data.orderCode,
+            amount: amount,
+            qrCode: data.qrCode,
+            createdAt: Date.now(),
+          });
+
+          // Bắt đầu kiểm tra trạng thái
+          startPolling();
+        } catch (err) {
+          statusDiv.textContent = "❌ " + err.message;
+          statusDiv.className = "error";
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      function startPolling() {
+        if (pollingInterval) clearInterval(pollingInterval);
+
+        const pollOnce = async () => {
+          if (!currentOrderCode) return;
+
+          try {
+            const res = await fetch(
+              `${API_BASE}/check-payment-status/${currentOrderCode}`,
+            );
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Lỗi kiểm tra trạng thái");
+
+            if (data.status === "SUCCESS") {
+              const statusDiv = document.getElementById("status");
+              statusDiv.textContent = "";
+              statusDiv.className = "";
+              showSuccessPopup(data.amount);
+
+              clearPaymentState();
+              clearInterval(pollingInterval); // Dừng polling
+              pollingInterval = null;
+            }
+          } catch (e) {
+            console.log("Đang kiểm tra trạng thái...");
+          }
+        };
+
+        pollOnce(); // gọi ngay lần đầu để giảm độ trễ popup
+        pollingInterval = setInterval(pollOnce, 3000); // Kiểm tra mỗi 3 giây
+      }
+
+      document
+        .getElementById("btnCreate")
+        .addEventListener("click", (event) => {
+          event.preventDefault();
+          createPayment();
+        });
+
+      document
+        .getElementById("btnCloseSuccessModal")
+        .addEventListener("click", () => {
+          hideSuccessPopup();
+        });
+
+      document
+        .getElementById("successModal")
+        .addEventListener("click", (event) => {
+          if (event.target.id === "successModal") {
+            hideSuccessPopup();
+          }
+        });
+
+      document.addEventListener("keydown", (event) => {
+        const modal = document.getElementById("successModal");
+        if (event.key === "Escape" && modal.classList.contains("show")) {
+          hideSuccessPopup();
+        }
+      });
+
+      // Ensure modal is non-interactive while hidden.
+      document.getElementById("successModal").inert = true;
+
+      restorePaymentState();
+
+      // Dọn interval khi rời trang để tránh polling treo
+      window.addEventListener("beforeunload", () => {
+        if (pollingInterval) clearInterval(pollingInterval);
+      });
+    </script>
+  </body>
+</html>
