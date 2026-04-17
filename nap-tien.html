@@ -208,7 +208,12 @@
       let pollingInterval = null;
       let lastFocusedElement = null;
       const PAYMENT_STATE_KEY = "sems_payment_state";
-      const API_BASE = "http://localhost:8000/api";
+      const urlParams = new URLSearchParams(window.location.search);
+      const apiBaseOverride =
+        urlParams.get("apiBase") ||
+        window.localStorage.getItem("apiBaseOverride");
+      const DEFAULT_API_BASE = "http://14.224.210.210:8010/api";
+      const API_BASE = (apiBaseOverride || DEFAULT_API_BASE).replace(/\/$/, "");
 
       function showSuccessPopup(amount) {
         const modal = document.getElementById("successModal");
@@ -343,7 +348,8 @@
               `${API_BASE}/check-payment-status/${currentOrderCode}`,
             );
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Lỗi kiểm tra trạng thái");
+            if (!res.ok)
+              throw new Error(data.error || "Lỗi kiểm tra trạng thái");
 
             if (data.status === "SUCCESS") {
               const statusDiv = document.getElementById("status");

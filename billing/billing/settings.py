@@ -40,6 +40,9 @@ ALLOWED_HOSTS = [
     '.ngrok.app',
 ]
 
+if DEBUG:
+    ALLOWED_HOSTS = ['*']
+
 
 # Application definition
 
@@ -152,6 +155,9 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 # PayOS credentials — loaded from .env
+BACKEND_BASE_URL = os.getenv('BACKEND_BASE_URL', 'http://14.224.210.210:8010')
+BACKEND_PORT = int(os.getenv('BACKEND_PORT', '8010'))
+
 PAYOS_CLIENT_ID = os.getenv('PAYOS_CLIENT_ID', '66375f30-9e70-49eb-b63f-2248c7a9aa95')
 PAYOS_API_KEY = os.getenv('PAYOS_API_KEY', '984cfee4-da49-4394-aa99-5cfb2bf964c2')
 PAYOS_CHECKSUM_KEY = os.getenv('PAYOS_CHECKSUM_KEY', 'a6b228c0ceb77bde31bbbe66fe0155ac8f09e7c9043c5008e616cc6424ac3b8f')
